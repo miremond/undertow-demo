@@ -1,22 +1,26 @@
 package org.pac4j.undertow;
 
-import io.undertow.security.idm.Account;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.server.session.Session;
-
-import org.pac4j.core.profile.CommonProfile;
+import io.undertow.server.session.SessionConfig;
+import io.undertow.server.session.SessionManager;
 
 public class StorageHelper {
 
+    private static Session getSession(HttpServerExchange exchange) {
+        return exchange.getAttachment(SessionManager.ATTACHMENT_KEY).getSession(exchange,
+                exchange.getAttachment(SessionConfig.ATTACHMENT_KEY));
+    }
+
     private static void save(HttpServerExchange exchange, String name, Object value) {
-        Session session = Config.getSessionManager().getSession(exchange, Config.getSessioncookieconfig());
+        Session session = getSession(exchange);
         if (session != null) {
             session.setAttribute(name, value);
         }
     }
 
     private static Object get(HttpServerExchange exchange, String name) {
-        Session session = Config.getSessionManager().getSession(exchange, Config.getSessioncookieconfig());
+        Session session = getSession(exchange);
         if (session != null) {
             return session.getAttribute(name);
         } else {
@@ -24,28 +28,28 @@ public class StorageHelper {
         }
     }
 
-    public static void saveProfile(HttpServerExchange exchange, CommonProfile profile) {
-        save(exchange, Constants.PROFILE, profile);
+    public static void saveProfile(HttpServerExchange exchange, ProfileWrapper profileWrapper) {
+        save(exchange, Constants.PROFILE, profileWrapper);
     }
 
-    public static CommonProfile getProfile(HttpServerExchange exchange) {
-        return (CommonProfile) get(exchange, Constants.PROFILE);
+    public static ProfileWrapper getProfile(HttpServerExchange exchange) {
+        return (ProfileWrapper) get(exchange, Constants.PROFILE);
     }
 
-    public static String getRequestedUrl(HttpServerExchange exchange, String clientName) {
-        return (String) get(exchange, clientName + Constants.SEPARATOR + Constants.REQUESTED_URL);
+    public static String getRequestedUrl(HttpServerExchange exchange) {
+        return (String) get(exchange, Constants.REQUESTED_URL);
     }
 
-    public static void saveRequestedUrl(HttpServerExchange exchange, String clientName, String requestedUrlToSave) {
-        save(exchange, clientName + Constants.SEPARATOR + Constants.REQUESTED_URL, requestedUrlToSave);
+    public static void saveRequestedUrl(HttpServerExchange exchange, String requestedUrlToSave) {
+        save(exchange, Constants.REQUESTED_URL, requestedUrlToSave);
     }
 
-    public static void saveAccount(HttpServerExchange exchange, Account account) {
-        save(exchange, Constants.ACCOUNT, account);
-    }
-
-    public static Account getAccount(HttpServerExchange exchange) {
-        return (Account) get(exchange, Constants.ACCOUNT);
+    public static void createSession(HttpServerExchange exchange) {
+        Session session = getSession(exchange);
+        if (session == null) {
+            exchange.getAttachment(SessionManager.ATTACHMENT_KEY).createSession(exchange,
+                    exchange.getAttachment(SessionConfig.ATTACHMENT_KEY));
+        }
     }
 
 }

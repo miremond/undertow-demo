@@ -1,7 +1,11 @@
 package org.pac4j.undertow;
 
 import io.undertow.server.HttpServerExchange;
+import io.undertow.server.handlers.form.FormData;
+import io.undertow.server.handlers.form.FormDataParser;
 import io.undertow.server.session.Session;
+import io.undertow.server.session.SessionConfig;
+import io.undertow.server.session.SessionManager;
 import io.undertow.util.HttpString;
 
 import java.util.Deque;
@@ -10,19 +14,32 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import org.pac4j.core.context.WebContext;
+import org.pac4j.core.util.CommonHelper;
 
 public class UndertowWebContext implements WebContext {
 
     private final HttpServerExchange exchange;
+    private final SessionManager sessionManager;
+    private final SessionConfig sessionConfig;
 
     public UndertowWebContext(HttpServerExchange exchange) {
         this.exchange = exchange;
+        this.sessionManager = exchange.getAttachment(SessionManager.ATTACHMENT_KEY);
+        this.sessionConfig = exchange.getAttachment(SessionConfig.ATTACHMENT_KEY);
     }
 
     @Override
     public String getRequestParameter(String name) {
         Deque<String> param = exchange.getQueryParameters().get(name);
-        return (param != null) ? param.peek() : null;
+        if (param != null) {
+            return param.peek();
+        } else {
+            FormData data = exchange.getAttachment(FormDataParser.FORM_DATA);
+            if (data != null && data.get(name) != null) {
+                return data.get(name).peek().getValue();
+            }
+        }
+        return null;
     }
 
     @Override
@@ -31,6 +48,12 @@ public class UndertowWebContext implements WebContext {
         Map<String, String[]> map = new HashMap<String, String[]>();
         for (Entry<String, Deque<String>> entry : params.entrySet()) {
             map.put(entry.getKey(), entry.getValue().toArray(new String[entry.getValue().size()]));
+        }
+        FormData data = exchange.getAttachment(FormDataParser.FORM_DATA);
+        if (data != null) {
+            for (String key : data) {
+                map.put(key, data.get(key).toArray(new String[data.get(key).size()]));
+            }
         }
         return map;
     }
@@ -42,7 +65,7 @@ public class UndertowWebContext implements WebContext {
 
     @Override
     public void setSessionAttribute(String name, Object value) {
-        Session session = Config.getSessionManager().getSession(exchange, Config.getSessioncookieconfig());
+        Session session = this.sessionManager.getSession(exchange, this.sessionConfig);
         if (session != null) {
             if (value == null) {
                 session.removeAttribute(name);
@@ -54,7 +77,7 @@ public class UndertowWebContext implements WebContext {
 
     @Override
     public Object getSessionAttribute(String name) {
-        Session session = Config.getSessionManager().getSession(exchange, Config.getSessioncookieconfig());
+        Session session = this.sessionManager.getSession(exchange, this.sessionConfig);
         return (session != null) ? session.getAttribute(name) : null;
     }
 
@@ -96,7 +119,7 @@ public class UndertowWebContext implements WebContext {
     @Override
     public String getFullRequestURL() {
         String full = exchange.getRequestURL();
-        if (exchange.getQueryString() != null) {
+        if (CommonHelper.isNotBlank(exchange.getQueryString())) {
             full = full + "?" + exchange.getQueryString();
         }
         return full;

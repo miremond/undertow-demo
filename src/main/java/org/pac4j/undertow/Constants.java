@@ -2,8 +2,6 @@ package org.pac4j.undertow;
 
 public interface Constants {
 
-    public static final String VERTX_SESSION_COOKIE = "VXSESSIONID";
-
     public final static String SESSION_ID = "pac4jSessionId";
 
     public final static String REQUESTED_URL = "pac4jRequestedUrl";

@@ -3,13 +3,14 @@ package org.pac4j.undertow;
 import io.undertow.security.api.AuthenticationMechanism;
 import io.undertow.security.api.SecurityContext;
 import io.undertow.server.HttpServerExchange;
-import io.undertow.server.session.Session;
 
 import org.pac4j.core.client.BaseClient;
 import org.pac4j.core.context.WebContext;
 import org.pac4j.core.exception.RequiresHttpAction;
 
 public class ClientAuthenticationMechanism implements AuthenticationMechanism {
+
+    private final String name = "PAC4J_CLIENT";
 
     private final String clientName;
 
@@ -22,7 +23,9 @@ public class ClientAuthenticationMechanism implements AuthenticationMechanism {
 
     @Override
     public AuthenticationMechanismOutcome authenticate(HttpServerExchange exchange, SecurityContext securityContext) {
-        if (StorageHelper.getProfile(exchange) != null) {
+        ProfileWrapper profile = StorageHelper.getProfile(exchange);
+        if (profile != null) {
+            securityContext.authenticationComplete(profile.getAccount(), name, false);
             return AuthenticationMechanismOutcome.AUTHENTICATED;
         } else {
             return AuthenticationMechanismOutcome.NOT_ATTEMPTED;
@@ -32,17 +35,12 @@ public class ClientAuthenticationMechanism implements AuthenticationMechanism {
     @SuppressWarnings("rawtypes")
     @Override
     public ChallengeResult sendChallenge(HttpServerExchange exchange, SecurityContext securityContext) {
-        // TODO save request url here?
         WebContext webContext = new UndertowWebContext(exchange);
         final String requestedUrlToSave = webContext.getFullRequestURL();
-        Session session = Config.getSessionManager().getSession(exchange, Config.getSessioncookieconfig());
-        if (session == null) {
-            session = Config.getSessionManager().createSession(exchange, Config.getSessioncookieconfig());
-        }
-        StorageHelper.saveRequestedUrl(exchange, clientName, requestedUrlToSave);
+        StorageHelper.createSession(exchange);
+        StorageHelper.saveRequestedUrl(exchange, requestedUrlToSave);
         // get client
         final BaseClient client = (BaseClient) Config.getClients().findClient(clientName);
-        //logger.debug("client : {}", client);
         try {
             client.redirect(webContext, true, isAjax);
             return new ChallengeResult(true);

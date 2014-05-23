@@ -1,18 +1,3 @@
-/*
-  Copyright 2012 - 2014 Jerome Leleu
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
- */
 package org.pac4j.undertow;
 
 import io.undertow.server.HttpHandler;
@@ -21,11 +6,9 @@ import io.undertow.server.HttpServerExchange;
 import org.apache.commons.lang3.StringUtils;
 import org.pac4j.core.client.BaseClient;
 import org.pac4j.core.client.Clients;
-import org.pac4j.core.context.HttpConstants;
 import org.pac4j.core.context.WebContext;
 import org.pac4j.core.credentials.Credentials;
 import org.pac4j.core.exception.RequiresHttpAction;
-import org.pac4j.core.exception.TechnicalException;
 import org.pac4j.core.profile.CommonProfile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +17,7 @@ public class CallbackHandler implements HttpHandler {
 
     protected static final Logger logger = LoggerFactory.getLogger(CallbackHandler.class);
 
+    @SuppressWarnings("rawtypes")
     @Override
     public void handleRequest(final HttpServerExchange exchange) {
         // clients group from config
@@ -55,21 +39,8 @@ public class CallbackHandler implements HttpHandler {
             // requires some specific HTTP action
             final int code = e.getCode();
             logger.debug("requires HTTP action : {}", code);
-            if (code == HttpConstants.UNAUTHORIZED) {
-                HttpResponseHelper.unauthorized(exchange, Config.getErrorPage401());
-                return;
-            } else if (code == HttpConstants.TEMP_REDIRECT) {
-                HttpResponseHelper.redirect(exchange);
-                return;
-            } else if (code == HttpConstants.OK) {
-                final String content = "fixme";
-                logger.debug("render : {}", content);
-                HttpResponseHelper.ok(exchange, content);
-                return;
-            }
-            final String message = "Unsupported HTTP action : " + code;
-            logger.error(message);
-            throw new TechnicalException(message);
+            exchange.endExchange();
+            return;
         }
 
         // get user profile
@@ -82,11 +53,12 @@ public class CallbackHandler implements HttpHandler {
 
         // save user profile only if it's not null
         if (profile != null) {
-            StorageHelper.saveProfile(exchange, profile);
+            StorageHelper.saveProfile(exchange, new ProfileWrapper(profile));
         }
 
         // get requested url
-        final String requestedUrl = StorageHelper.getRequestedUrl(exchange, client.getName());
+        final String requestedUrl = StorageHelper.getRequestedUrl(exchange);
+        StorageHelper.saveRequestedUrl(exchange, "/");
         final String redirectUrl = defaultUrl(requestedUrl, Config.getDefaultSuccessUrl());
 
         // retrieve saved request and redirect

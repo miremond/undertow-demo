@@ -1,23 +1,24 @@
 package org.pac4j.undertow;
 
 import io.undertow.Undertow;
-import io.undertow.io.IoCallback;
 import io.undertow.security.api.AuthenticationMechanism;
 import io.undertow.security.api.AuthenticationMode;
-import io.undertow.security.api.SecurityContext;
 import io.undertow.security.handlers.AuthenticationCallHandler;
 import io.undertow.security.handlers.AuthenticationConstraintHandler;
 import io.undertow.security.handlers.AuthenticationMechanismsHandler;
 import io.undertow.security.handlers.SecurityInitialHandler;
-import io.undertow.security.idm.IdentityManager;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.server.handlers.PathHandler;
+import io.undertow.server.handlers.form.EagerFormParsingHandler;
+import io.undertow.server.handlers.form.FormData;
+import io.undertow.server.handlers.form.FormDataParser;
+import io.undertow.server.handlers.form.FormEncodedDataDefinition;
+import io.undertow.server.handlers.form.FormParserFactory;
+import io.undertow.server.session.SessionAttachmentHandler;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.pac4j.cas.client.CasClient;
 import org.pac4j.core.client.Clients;
@@ -32,45 +33,61 @@ public class DemoServer {
 
     public static void main(final String[] args) {
 
-        System.out.println("You can login with the following credentials:");
-        System.out.println("User: userOne Password: passwordOne");
-        System.out.println("User: userTwo Password: passwordTwo");
-
-        final Map<String, char[]> users = new HashMap<String, char[]>(2);
-        users.put("userOne", "passwordOne".toCharArray());
-        users.put("userTwo", "passwordTwo".toCharArray());
-
-        final IdentityManager identityManager = new MapIdentityManager(users);
-
         Config.setClients(buildClients());
 
         PathHandler path = new PathHandler();
-        path.addExactPath("/", addSecurity(new HttpHandler() {
-            @Override
-            public void handleRequest(final HttpServerExchange exchange) throws Exception {
-                final SecurityContext context = exchange.getSecurityContext();
-                exchange.getResponseSender().send(
-                        "Hello   " + context.getAuthenticatedAccount().getPrincipal().getName(),
-                        IoCallback.END_EXCHANGE);
-            }
-        }, identityManager));
-        path.addExactPath("/callback", new CallbackHandler());
+        path.addExactPath("/", DemoHandlers.indexHandler);
+        path.addExactPath("/facebook/index.html", addSecurity(DemoHandlers.authenticatedHandler, "FacebookClient"));
+        path.addExactPath("/twitter/index.html", addSecurity(DemoHandlers.authenticatedHandler, "TwitterClient"));
+        path.addExactPath("/form/index.html", addSecurity(DemoHandlers.authenticatedHandler, "FormClient"));
+        path.addExactPath("/basicauth/index.html", addSecurity(DemoHandlers.authenticatedHandler, "BasicAuthClient"));
+        path.addExactPath("/cas/index.html", addSecurity(DemoHandlers.authenticatedHandler, "CasClient"));
+        path.addExactPath("/saml2/index.html", addSecurity(DemoHandlers.authenticatedHandler, "Saml2Client"));
+        path.addExactPath("/callback", addFormParsing(new CallbackHandler()));
 
-        Undertow server = Undertow.builder().addListener(8080, "localhost").setHandler(path).build();
+        path.addExactPath("/theForm.html", DemoHandlers.formHandler);
+        path.addExactPath("/post", addFormParsing(new HttpHandler() {
+
+            @Override
+            public void handleRequest(HttpServerExchange exchange) throws Exception {
+                FormData data = exchange.getAttachment(FormDataParser.FORM_DATA);
+                String response = "no data\r\n";
+                if (data != null) {
+                    response = "form data " + data.toString() + "\r\n";
+                }
+                exchange.getResponseSender().send(response);
+            }
+        }));
+
+        Undertow server = Undertow.builder().addListener(8080, "localhost").setHandler(addSession(path)).build();
         server.start();
     }
 
-    private static HttpHandler addSecurity(final HttpHandler toWrap, final IdentityManager identityManager) {
+    private static HttpHandler addFormParsing(final HttpHandler toWrap) {
         HttpHandler handler = toWrap;
+        FormParserFactory factory = FormParserFactory.builder().addParser(new FormEncodedDataDefinition()).build();
+        EagerFormParsingHandler formHandler = new EagerFormParsingHandler(factory);
+        formHandler.setNext(handler);
+        handler = formHandler;
+        return handler;
+    }
+
+    private static HttpHandler addSession(final HttpHandler toWrap) {
+        return new SessionAttachmentHandler(toWrap, Config.getSessionManager(), Config.getSessioncookieconfig());
+    }
+
+    private static HttpHandler addSecurity(final HttpHandler toWrap, final String clientName) {
+        HttpHandler handler = toWrap;
+        // protect resource
         handler = new AuthenticationCallHandler(handler);
+        // set authentication required
         handler = new AuthenticationConstraintHandler(handler);
-        //        List<AuthenticationMechanism> mechanisms = Collections
-        //                .<AuthenticationMechanism> singletonList(new BasicAuthenticationMechanism("My Realm"));
         List<AuthenticationMechanism> mechanisms = Collections
-                .<AuthenticationMechanism> singletonList(new ClientAuthenticationMechanism("CasClient", false));
+                .<AuthenticationMechanism> singletonList(new ClientAuthenticationMechanism(clientName, false));
+        // use pac4j as authentication mechanism
         handler = new AuthenticationMechanismsHandler(handler, mechanisms);
-        handler = new CachedAuthenticatedSessionHandler(handler, Config.getSessionManager());
-        handler = new SecurityInitialHandler(AuthenticationMode.PRO_ACTIVE, identityManager, handler);
+        // put security context in exchange
+        handler = new SecurityInitialHandler(AuthenticationMode.PRO_ACTIVE, null, handler);
         return handler;
     }
 
@@ -92,7 +109,7 @@ public class DemoServer {
         // CAS
         final CasClient casClient = new CasClient();
         // casClient.setGateway(true);
-        casClient.setCasLoginUrl("http://localhost:8888/cas/login");
+        casClient.setCasLoginUrl("https://freeuse1.casinthecloud.com/leleujgithub/login");
 
         final Clients clients = new Clients("http://localhost:8080/callback", saml2Client, facebookClient,
                 twitterClient, formClient, basicAuthClient, casClient);
